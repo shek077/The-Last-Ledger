@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Neumorphic Expense Tracker</title>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#f0fff4">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- html2pdf for PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.2/html2pdf.bundle.min.js"></script>
+
+  <style>
+    /* Neumorphic mint/green theme from your palette (adapted) */
+    :root{
+      --bg: #f0fff4; /* background */
+      --surface: #e8f5e9; /* cards */
+      --text: #2e7d32; /* primary text */
+      --muted: #6b8e6a;
+      --accent: #66bb6a; /* mint accent */
+      --shadow-light: #ffffff;
+      --shadow-dark: #d0e6d1;
+      --radius-lg: 30px;
+      --radius-md: 20px;
+      --radius-sm: 12px;
+      --fast: 180ms;
+    }
+
+    html,body{height:100%;}
+    body{
+      margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased;
+    }
+
+    .app{
+      max-width:1100px; margin:28px auto; padding:28px; display:grid; grid-template-columns: 420px 1fr; gap:28px;
+    }
+
+    .card{
+      background:var(--surface); border-radius:var(--radius-md); padding:18px; box-shadow: 8px 8px 18px var(--shadow-dark), -8px -8px 18px var(--shadow-light);
+    }
+
+    header{display:flex; gap:12px; align-items:center; margin-bottom:12px}
+    .brand{font-weight:700; font-size:20px}
+    .sub{color:var(--muted); font-size:13px}
+
+    form .row{display:flex; gap:8px; margin-bottom:10px}
+    input, select, button{background:var(--surface); border:none; padding:10px 12px; border-radius:12px; box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light); font-size:14px}
+    input:focus, select:focus{outline:none; transform:translateY(-1px)}
+    label{font-size:13px; color:var(--muted); margin-bottom:6px; display:block}
+
+    .btn{cursor:pointer; background:linear-gradient(180deg,var(--accent),#4caf50); color:white; font-weight:600; box-shadow: 6px 6px 14px rgba(0,0,0,0.08);}
+    .btn.secondary{background:transparent; color:var(--text); box-shadow:none; border:1px solid rgba(46,125,50,0.08)}
+
+    .list{margin-top:12px; max-height:360px; overflow:auto}
+    .item{display:flex; justify-content:space-between; gap:10px; padding:10px; border-radius:12px; margin-bottom:10px}
+    .item .meta{color:var(--muted); font-size:13px}
+    .amount.expense{color:#c62828; font-weight:700}
+    .amount.earning{color:#1b5e20; font-weight:700}
+
+    .charts{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+
+    .controls{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+
+    .small{font-size:13px}
+
+    footer{grid-column:1/-1; text-align:center; color:var(--muted); margin-top:18px}
+
+    /* Responsive */
+    @media (max-width:980px){
+      .app{grid-template-columns:1fr; padding:16px}
+      .charts{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <header>
+        <div>
+          <div class="brand">The Last Ledger</div>
+          <div class="sub">Neumorphic expense tracker — mint theme</div>
+        </div>
+      </header>
+
+      <section>
+        <form id="entryForm">
+          <div class="row">
+            <div style="flex:1">
+              <label>Type</label>
+              <select id="type">
+                <option value="expense">Expense</option>
+                <option value="earning">Earning</option>
+              </select>
+            </div>
+            <div style="width:130px">
+              <label>Amount</label>
+              <input id="amount" type="number" step="0.01" required />
+            </div>
+          </div>
+
+          <div class="row">
+            <div style="flex:1">
+              <label>Category</label>
+              <div style="display:flex; gap:8px">
+                <select id="categorySelect" style="flex:1"></select>
+                <input id="customCategory" placeholder="+ add" />
+              </div>
+            </div>
+            <div style="width:150px">
+              <label>Date</label>
+              <input id="date" type="date" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div style="flex:1">
+              <label>Description</label>
+              <input id="desc" placeholder="optional" />
+            </div>
+            <div style="width:110px; display:flex; flex-direction:column; justify-content:flex-end">
+              <button id="addBtn" class="btn" type="submit">Add</button>
+            </div>
+          </div>
+        </form>
+
+        <div style="margin-top:10px; border-top:1px dashed rgba(46,125,50,0.06); padding-top:12px">
+          <div style="display:flex; gap:8px; align-items:center; justify-content:space-between">
+            <div class="small">Quick actions</div>
+            <div class="controls">
+              <button id="exportPdf" class="btn secondary small">Export PDF</button>
+              <button id="exportCsv" class="btn secondary small">Export CSV</button>
+              <button id="clearAll" class="btn secondary small">Clear All</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px">
+          <label>Monthly budget (total)</label>
+          <div style="display:flex; gap:8px; align-items:center">
+            <input id="monthlyBudget" type="number" placeholder="0" />
+            <button id="saveBudget" class="btn secondary small">Save</button>
+          </div>
+          <div style="margin-top:8px; font-size:13px; color:var(--muted)">Set per-category budgets below in the right panel.</div>
+        </div>
+
+        <div class="list" id="entriesList"></div>
+      </section>
+    </div>
+
+    <div>
+      <div class="card">
+        <h3 style="margin:0 0 8px 0">Overview</h3>
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px">
+          <div style="flex:1">
+            <div style="font-size:13px; color:var(--muted)">Balance</div>
+            <div id="balance" style="font-size:22px; font-weight:700">₹0.00</div>
+          </div>
+          <div style="width:160px">
+            <div style="font-size:13px; color:var(--muted)">This month spend</div>
+            <div id="monthSpend" style="font-weight:700; color:#c62828">₹0.00</div>
+          </div>
+        </div>
+
+        <div class="charts">
+          <div class="card" style="padding:12px">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div style="font-weight:600">By Category</div>
+              <div class="small" id="catPercent">—</div>
+            </div>
+            <canvas id="pieChart" height="240"></canvas>
+          </div>
+
+          <div class="card" style="padding:12px">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div style="font-weight:600">Monthly Trend</div>
+              <div class="small">Last 6 months</div>
+            </div>
+            <canvas id="barChart" height="240"></canvas>
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <h4 style="margin:8px 0 6px 0">Per-category budgets</h4>
+          <div id="categoryBudgets"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <h4 style="margin:0 0 8px 0">Settings & Notifications</h4>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
+          <button id="enableNotif" class="btn small">Enable Notifications</button>
+          <div class="small">(Browser permission required)</div>
+        </div>
+        <div style="font-size:13px; color:var(--muted)">When an expense causes monthly spending to exceed the total budget or a category budget you'll get an alert + optional browser notification.</div>
+      </div>
+    </div>
+
+    <footer class="small">Built with care — add, track, export. Tip: allow notifications for budget alerts.</footer>
+  </div>
+
+  <script>
+    /* ---------- Data model & storage ---------- */
+    const STORAGE_KEY = 'lastledger_data_v1';
+    const BUDGET_KEY = 'lastledger_budgets_v1';
+
+    const defaultCategories = ['Food','Travel','Rent','Groceries','Utilities','Entertainment','Salary','Other'];
+
+    let state = {
+      entries: [],
+      categories: [...defaultCategories],
+      monthlyBudget: 0,
+      categoryBudgets: {}
+    };
+
+    function load(){
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        try{ const parsed = JSON.parse(raw); Object.assign(state, parsed); }
+        catch(e){ console.error('corrupt data', e); }
+      }
+      const braw = localStorage.getItem(BUDGET_KEY);
+      if(braw){ try{ const pb = JSON.parse(braw); state.monthlyBudget = pb.monthlyBudget||0; state.categoryBudgets = pb.categoryBudgets||{} }catch(e){}
+      }
+    }
+
+    function save(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({entries:state.entries, categories:state.categories}));
+      localStorage.setItem(BUDGET_KEY, JSON.stringify({monthlyBudget: state.monthlyBudget||0, categoryBudgets: state.categoryBudgets||{}}));
+    }
+
+    /* ---------- Utils ---------- */
+    function formatCurrency(n){ return '₹' + Number(n||0).toFixed(2); }
+    function uid(){ return Math.random().toString(36).slice(2,9); }
+
+    /* ---------- DOM refs ---------- */
+    const categorySelect = document.getElementById('categorySelect');
+    const customCategory = document.getElementById('customCategory');
+    const entryForm = document.getElementById('entryForm');
+    const entriesList = document.getElementById('entriesList');
+    const balanceEl = document.getElementById('balance');
+    const monthSpendEl = document.getElementById('monthSpend');
+    const monthlyBudgetInput = document.getElementById('monthlyBudget');
+    const saveBudgetBtn = document.getElementById('saveBudget');
+    const categoryBudgetsEl = document.getElementById('categoryBudgets');
+
+    const enableNotifBtn = document.getElementById('enableNotif');
+
+    /* Charts */
+    let pieChart=null, barChart=null;
+
+    function populateCategorySelect(){
+      categorySelect.innerHTML = '';
+      state.categories.forEach(c => {
+        const opt = document.createElement('option'); opt.value=c; opt.textContent=c; categorySelect.appendChild(opt);
+      });
+    }
+
+    function addCategory(name){
+      if(!name) return;
+      if(!state.categories.includes(name)) state.categories.push(name);
+      populateCategorySelect(); save(); renderBudgets();
+    }
+
+    customCategory.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter'){ e.preventDefault(); addCategory(customCategory.value.trim()); customCategory.value=''; }
+    });
+
+    entryForm.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const type = document.getElementById('type').value;
+      const amount = parseFloat(document.getElementById('amount').value||0);
+      const category = document.getElementById('categorySelect').value;
+      const date = document.getElementById('date').value || new Date().toISOString().slice(0,10);
+      const desc = document.getElementById('desc').value||'';
+      if(!amount || amount<=0) return alert('Enter valid amount');
+      const entry = {id: uid(), type, amount, category, date, desc};
+      state.entries.push(entry); save();
+      render();
+      checkBudgetsOnAdd(entry);
+      entryForm.reset();
+    });
+
+    document.getElementById('clearAll').addEventListener('click', ()=>{
+      if(!confirm('Clear all data? This cannot be undone.')) return; state.entries=[]; state.categories=[...defaultCategories]; state.monthlyBudget=0; state.categoryBudgets={}; save(); render();
+    });
+
+    document.getElementById('exportCsv').addEventListener('click', ()=>{
+      const rows = [['id','type','amount','category','date','desc']];
+      state.entries.forEach(r=> rows.push([r.id,r.type,r.amount,r.category,r.date,r.desc]));
+      const csv = rows.map(r=> r.map(c=> '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'});
+      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='ledger.csv'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('exportPdf').addEventListener('click', ()=>{
+      const element = document.createElement('div');
+      element.style.padding='18px';
+      element.innerHTML = `<h2>Expense Report</h2><p>Balance: ${balanceEl.textContent}</p><h3>Entries</h3>` +
+        '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%"><thead><tr><th>ID</th><th>Type</th><th>Amount</th><th>Category</th><th>Date</th><th>Desc</th></tr></thead><tbody>' +
+        state.entries.map(r=>`<tr><td>${r.id}</td><td>${r.type}</td><td>${r.amount}</td><td>${r.category}</td><td>${r.date}</td><td>${r.desc}</td></tr>`).join('') + '</tbody></table>';
+      html2pdf().from(element).save('expense-report.pdf');
+    });
+
+    /* ---------- budgets ---------- */
+    saveBudgetBtn.addEventListener('click', ()=>{
+      const v = parseFloat(monthlyBudgetInput.value||0);
+      state.monthlyBudget = v||0; save(); render(); alert('Saved monthly budget');
+    });
+
+    function renderBudgets(){
+      categoryBudgetsEl.innerHTML='';
+      state.categories.forEach(c=>{
+        const val = state.categoryBudgets[c]||'';
+        const row = document.createElement('div'); row.style.display='flex'; row.style.gap='8px'; row.style.alignItems='center'; row.style.marginBottom='8px';
+        row.innerHTML = `<div style="flex:1">${c}</div>`;
+        const input = document.createElement('input'); input.type='number'; input.placeholder='budget'; input.style.width='120px'; input.value=val; input.addEventListener('change',(e)=>{ state.categoryBudgets[c]= parseFloat(e.target.value)||0; save(); });
+        const del = document.createElement('button'); del.className='btn secondary small'; del.textContent='Remove'; del.addEventListener('click', ()=>{ if(confirm('Remove category '+c+'?')){ state.categories = state.categories.filter(x=>x!==c); delete state.categoryBudgets[c]; save(); populateCategorySelect(); render();}});
+        row.appendChild(input); row.appendChild(del); categoryBudgetsEl.appendChild(row);
+      });
+    }
+
+    /* ---------- rendering entries & summary ---------- */
+    function render(){
+      populateCategorySelect(); renderList(); renderSummary(); renderCharts(); renderBudgets(); monthlyBudgetInput.value = state.monthlyBudget||'';
+    }
+
+    function renderList(){
+      entriesList.innerHTML='';
+      const sorted = [...state.entries].sort((a,b)=> new Date(b.date)-new Date(a.date));
+      sorted.forEach(e=>{
+        const div = document.createElement('div'); div.className='item card';
+        const left = document.createElement('div'); left.innerHTML = `<div style="font-weight:600">${e.category} <span class="meta"> • ${e.date}</span></div><div class="meta">${e.desc||''}</div>`;
+        const right = document.createElement('div'); const amt = document.createElement('div'); amt.className='amount '+(e.type==='expense'?'expense':'earning'); amt.textContent = (e.type==='expense'?'- ':'+ ')+formatCurrency(e.amount);
+        const btns = document.createElement('div'); btns.style.marginTop='8px';
+        const del = document.createElement('button'); del.className='btn secondary small'; del.textContent='Delete'; del.addEventListener('click', ()=>{ if(confirm('Delete entry?')){ state.entries = state.entries.filter(x=>x.id!==e.id); save(); render(); }});
+        btns.appendChild(del);
+        right.appendChild(amt); right.appendChild(btns);
+        div.appendChild(left); div.appendChild(right); entriesList.appendChild(div);
+      });
+    }
+
+    function renderSummary(){
+      const balance = state.entries.reduce((s,e)=> s + (e.type==='earning'? e.amount: -e.amount), 0);
+      const now = new Date(); const monthStr = now.toISOString().slice(0,7);
+      const monthSpend = state.entries.filter(e=> e.type==='expense' && e.date.slice(0,7)===monthStr).reduce((s,e)=> s+e.amount,0);
+      balanceEl.textContent = formatCurrency(balance);
+      monthSpendEl.textContent = formatCurrency(monthSpend);
+    }
+
+    /* ---------- charts ---------- */
+    function renderCharts(){
+      const ctxPie = document.getElementById('pieChart').getContext('2d');
+      const ctxBar = document.getElementById('barChart').getContext('2d');
+
+      // category sums for expenses
+      const catSums = {};
+      state.categories.forEach(c=> catSums[c]=0);
+      state.entries.forEach(e=>{ if(e.type==='expense'){ if(!catSums[e.category]) catSums[e.category]=0; catSums[e.category]+=e.amount; }});
+      const labels = Object.keys(catSums).filter(k=>catSums[k]>0);
+      const data = labels.map(l=>catSums[l]);
+
+      if(pieChart) pieChart.destroy();
+      pieChart = new Chart(ctxPie, { type:'pie', data:{ labels, datasets:[{ data }] }, options:{ plugins:{ legend:{ position:'bottom' }}}});
+
+      // monthly trend - last 6 months
+      const months = []; const monthMap = {};
+      for(let i=5;i>=0;i--){ const d = new Date(); d.setMonth(d.getMonth()-i); const key = d.toISOString().slice(0,7); months.push(key); monthMap[key]=0; }
+      state.entries.forEach(e=>{ if(e.type==='expense'){ const k = e.date.slice(0,7); if(monthMap[k]!==undefined) monthMap[k]+=e.amount; }});
+      const barLabels = months.map(m=>{ const [y,mm]=m.split('-'); const d=new Date(y,mm-1,1); return d.toLocaleString(undefined,{month:'short', year:'numeric'}); });
+      const barData = months.map(m=> monthMap[m]||0);
+
+      if(barChart) barChart.destroy();
+      barChart = new Chart(ctxBar, { type:'bar', data:{ labels:barLabels, datasets:[{ label:'Expenses', data:barData }] }, options:{ plugins:{ legend:{display:false}} } });
+    }
+
+    /* ---------- budget checks & notifications ---------- */
+    function checkBudgetsOnAdd(entry){
+      if(entry.type!=='expense') return;
+      // check monthly total
+      const entryMonth = entry.date.slice(0,7);
+      const monthTotal = state.entries.filter(e=> e.type==='expense' && e.date.slice(0,7)===entryMonth).reduce((s,e)=> s+e.amount,0);
+      if(state.monthlyBudget && monthTotal > state.monthlyBudget){
+        alert('Warning — monthly budget exceeded');
+        notify('Budget alert', `Monthly budget exceeded: ${formatCurrency(monthTotal)} / ${formatCurrency(state.monthlyBudget)}`);
+      }
+      // check category budget
+      const catTotal = state.entries.filter(e=> e.type==='expense' && e.category===entry.category && e.date.slice(0,7)===entryMonth).reduce((s,e)=> s+e.amount,0);
+      const catBud = state.categoryBudgets[entry.category] || 0;
+      if(catBud && catTotal > catBud){
+        alert(`Warning — ${entry.category} budget exceeded`);
+        notify('Category budget alert', `${entry.category} exceeded: ${formatCurrency(catTotal)} / ${formatCurrency(catBud)}`);
+      }
+    }
+
+    function notify(title, body){
+      if(window.Notification && Notification.permission==='granted'){
+        new Notification(title, {body});
+      }
+    }
+
+    enableNotifBtn.addEventListener('click', async ()=>{
+      if(!('Notification' in window)) return alert('Notifications not supported');
+      const p = await Notification.requestPermission(); if(p==='granted') alert('Notifications enabled'); else alert('Notification permission: '+p);
+    });
+
+    /* ---------- init ---------- */
+    load(); render();
+
+    // expose small helper for quick sample data
+    window._LL = { state, addSample: ()=>{
+      const now = new Date(); const d = now.toISOString().slice(0,10);
+      state.entries.push({id:uid(), type:'earning', amount:50000, category:'Salary', date:d, desc:'Salary'});
+      state.entries.push({id:uid(), type:'expense', amount:1200, category:'Food', date:d, desc:'Lunch'});
+      state.entries.push({id:uid(), type:'expense', amount:3200, category:'Travel', date:d, desc:'Taxi and metro'});
+      save(); render();
+    }};
+
+      // ✅ Register service worker
+       if ("serviceWorker" in navigator) {
+         navigator.serviceWorker.register("./sw.js")
+           .then(() => console.log("Service Worker registered"))
+           .catch((err) => console.error("SW registration failed", err));
+  }
+  </script>
+</body>
+</html>
